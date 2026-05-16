@@ -281,7 +281,8 @@ fi
 Example crontab entry:
 
 ```cron
-15 7 * * * /opt/1c-pg-tools/check-pending-indexes.sh
+SHELL=/bin/bash
+0 2 * * 0 root /opt/1c-pg-tools/check-pending-indexes.sh >> /var/log/1c-pg-tools/check-pending-indexes.log 2>&1
 ```
 
 The wrapper intentionally checks exit codes instead of parsing logs. Regular
