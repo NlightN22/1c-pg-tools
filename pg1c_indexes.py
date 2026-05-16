@@ -22,15 +22,16 @@ except ImportError as exc:  # pragma: no cover - handled at runtime for admins.
     )
     raise SystemExit(2) from exc
 
+from onec_pg_tools.candidate_checks import is_candidate_safe
 from onec_pg_tools.config import DatabaseConfig, PostgresConfig
 from onec_pg_tools.config import load_config
 from onec_pg_tools.index_sql import build_analyze_sql, build_create_index_sql
 from onec_pg_tools.index_sql import make_index_name
 from onec_pg_tools.output import print_rows
+from onec_pg_tools.pending import PENDING_CHECK_FAILED, process_pending_mode
 from onec_pg_tools.postgres import connect
 from onec_pg_tools.repository import database_exists, fetch_candidates
 from onec_pg_tools.repository import fetch_cluster_databases
-from onec_pg_tools.repository import fetch_index_by_name
 from onec_pg_tools.repository import fetch_invalid_indexes, fetch_prerequisites
 from onec_pg_tools.repository import fetch_report, is_primary
 
@@ -46,7 +47,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "mode",
-        choices=("list-databases", "dry-run", "run", "report", "check-invalid"),
+        choices=(
+            "list-databases",
+            "dry-run",
+            "run",
+            "report",
+            "check-invalid",
+            "pending",
+        ),
         help="Execution mode.",
     )
     parser.add_argument(
@@ -62,7 +70,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def setup_logging(mode: str, log_dir: Path) -> logging.LoggerAdapter:
+def setup_logging(
+    mode: str, log_dir: Path, console_enabled: bool = True
+) -> logging.LoggerAdapter:
     logger = logging.getLogger("pg1c_indexes")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
@@ -70,9 +80,10 @@ def setup_logging(mode: str, log_dir: Path) -> logging.LoggerAdapter:
     formatter = logging.Formatter(
         "%(asctime)s %(levelname)s mode=%(mode)s %(message)s"
     )
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+    if console_enabled:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -81,12 +92,15 @@ def setup_logging(mode: str, log_dir: Path) -> logging.LoggerAdapter:
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except OSError as exc:
-        logger.warning(
-            "file_logging_unavailable log_dir=%s error=%s",
-            log_dir,
-            exc,
-            extra={"mode": mode},
-        )
+        if console_enabled:
+            logger.warning(
+                "file_logging_unavailable log_dir=%s error=%s",
+                log_dir,
+                exc,
+                extra={"mode": mode},
+            )
+    if not logger.handlers:
+        logger.addHandler(logging.NullHandler())
 
     return logging.LoggerAdapter(logger, {"mode": mode})
 
@@ -135,32 +149,6 @@ def process_dry_run_or_run(
             if mode == "dry-run":
                 continue
             create_index(conn, db_config, candidate, index_name, create_sql, logger)
-
-
-def is_candidate_safe(conn, db_config, candidate, index_name, logger) -> bool:
-    if not candidate.owner_allowed:
-        logger.error(
-            "database=%s table=%s skipped_not_owner owner=%s",
-            db_config.name,
-            candidate.table_name,
-            candidate.owner_name,
-        )
-        return False
-
-    existing_index = fetch_index_by_name(conn, index_name)
-    if existing_index:
-        logger.error(
-            "database=%s table=%s skipped_index_name_exists index=%s "
-            "indisvalid=%s indisready=%s definition=%s",
-            db_config.name,
-            candidate.table_name,
-            index_name,
-            existing_index["indisvalid"],
-            existing_index["indisready"],
-            existing_index["index_definition"],
-        )
-        return False
-    return True
 
 
 def create_index(conn, db_config, candidate, index_name, create_sql, logger) -> None:
@@ -241,10 +229,20 @@ def process_database(mode, postgres, db_config, logger) -> None:
 def main() -> int:
     args = parse_args()
     config_path = Path(args.config).resolve()
-    logger = setup_logging(args.mode, Path(args.log_dir))
+    logger = setup_logging(
+        args.mode,
+        Path(args.log_dir),
+        console_enabled=args.mode != "pending",
+    )
 
     logger.info("started config=%s", config_path)
-    postgres, databases = load_config(config_path)
+    try:
+        postgres, databases = load_config(config_path)
+    except Exception as exc:  # noqa: BLE001 - make pending useful for cron notifications.
+        if args.mode == "pending":
+            print(f"Pending index check failed: config={config_path} error={exc}", file=sys.stderr)
+            return PENDING_CHECK_FAILED
+        raise
     enabled_databases = [database for database in databases if database.enabled]
     logger.info(
         "postgres_host=%s postgres_port=%s enabled_databases=%d",
@@ -253,20 +251,32 @@ def main() -> int:
         len(enabled_databases),
     )
 
-    with closing(connect(postgres, postgres.connect_db)) as admin_conn:
-        if args.mode == "list-databases":
-            process_list_databases_mode(admin_conn, databases)
-            logger.info("finished")
-            return 0
+    try:
+        with closing(connect(postgres, postgres.connect_db)) as admin_conn:
+            if args.mode == "list-databases":
+                process_list_databases_mode(admin_conn, databases)
+                logger.info("finished")
+                return 0
+            if args.mode == "pending":
+                result = process_pending_mode(
+                    admin_conn, postgres, enabled_databases, logger
+                )
+                logger.info("finished exit_code=%d", result)
+                return result
 
-        for db_config in enabled_databases:
-            if not database_exists(admin_conn, db_config.name):
-                logger.error("database=%s missing_or_not_connectable", db_config.name)
-                continue
-            try:
-                process_database(args.mode, postgres, db_config, logger)
-            except Exception as exc:  # noqa: BLE001 - keep other databases processable.
-                logger.exception("database=%s failed error=%s", db_config.name, exc)
+            for db_config in enabled_databases:
+                if not database_exists(admin_conn, db_config.name):
+                    logger.error("database=%s missing_or_not_connectable", db_config.name)
+                    continue
+                try:
+                    process_database(args.mode, postgres, db_config, logger)
+                except Exception as exc:  # noqa: BLE001 - keep other databases processable.
+                    logger.exception("database=%s failed error=%s", db_config.name, exc)
+    except Exception as exc:  # noqa: BLE001 - make pending useful for cron notifications.
+        if args.mode == "pending":
+            print(f"Pending index check failed: error={exc}", file=sys.stderr)
+            return PENDING_CHECK_FAILED
+        raise
 
     logger.info("finished")
     return 0

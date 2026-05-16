@@ -174,6 +174,36 @@ If an index with the target name already exists but does not match the expected
 definition, the table is skipped and the existing index definition is written to
 the log. The tool does not drop or replace indexes automatically.
 
+Pending index check:
+
+```bash
+cd /opt/1c-pg-tools
+python3 pg1c_indexes.py pending
+```
+
+The `pending` mode is intended for cron jobs and external notification systems.
+It uses the same candidate discovery and safety checks as `dry-run`, but never
+creates indexes and suppresses regular INFO console logging.
+
+Exit codes:
+
+- `0`: no pending indexes;
+- `1`: pending indexes were found;
+- `2`: the check failed.
+
+When no indexes are pending, output is short:
+
+```text
+No pending indexes.
+```
+
+When candidates are found, each line is compact and suitable for notification
+messages:
+
+```text
+database=torg table=_document206 size=2796 MB sql=CREATE INDEX CONCURRENTLY "idx_document206_number_as_mvarchar" ON public."_document206" USING btree (((_number)::mvarchar));
+```
+
 Create missing indexes:
 
 ```bash
@@ -229,6 +259,34 @@ execution result, elapsed creation time, and errors.
 
 If the configured log directory cannot be created or opened, the tool continues
 with console logging and writes a warning.
+
+## Cron Monitoring
+
+Example wrapper script:
+
+```bash
+#!/bin/bash
+set -o pipefail
+
+OUT=$(/usr/bin/python3 /opt/1c-pg-tools/pg1c_indexes.py pending 2>&1)
+RC=$?
+
+if [ "$RC" -eq 1 ]; then
+    /opt/admin-tools/notify.sh "1C PostgreSQL index candidates found" "$OUT"
+elif [ "$RC" -eq 2 ]; then
+    /opt/admin-tools/notify.sh "1C PostgreSQL index check failed" "$OUT"
+fi
+```
+
+Example crontab entry:
+
+```cron
+15 7 * * * /opt/1c-pg-tools/check-pending-indexes.sh
+```
+
+The wrapper intentionally checks exit codes instead of parsing logs. Regular
+mode logs can still be reviewed under `/var/log/1c-pg-tools/` when detailed
+diagnostics are needed.
 
 ## PostgreSQL Permissions
 
