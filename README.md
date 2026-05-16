@@ -12,12 +12,19 @@ LIMIT 50
 ```
 
 When the `_number` column has type `mchar`, the regular index on `_number` may
-not be used. The managed index has this form:
+not be used. The managed index has this default form:
 
 ```sql
 CREATE INDEX CONCURRENTLY idx_<table_name>_number_as_mvarchar
 ON public.<table_name>
-USING btree ((_number::mvarchar) mvarchar_icase_ops);
+USING btree ((_number::mvarchar));
+```
+
+For 1C tables whose names start with an underscore, the generated index name
+omits that leading underscore. For example, `_document213` uses:
+
+```text
+idx_document213_number_as_mvarchar
 ```
 
 ## Project Layout
@@ -100,8 +107,7 @@ Candidate tables are selected from `public` when:
 - the table has a `_number` column;
 - `_number` has type `mchar` or `mvarchar`;
 - the table size is at least `min_table_size_gb`;
-- a valid `_number::mvarchar` expression index with `mvarchar_icase_ops` does
-  not already exist;
+- a valid `_number::mvarchar` expression index does not already exist;
 - the table matches the enabled 1C table rules.
 
 Table rules:
@@ -163,6 +169,10 @@ python3 pg1c_indexes.py dry-run
 The `dry-run` mode reads `config.yaml`, connects through the configured
 PostgreSQL write endpoint, checks that the connection points to the primary,
 finds candidate tables, and prints SQL statements without creating indexes.
+
+If an index with the target name already exists but does not match the expected
+definition, the table is skipped and the existing index definition is written to
+the log. The tool does not drop or replace indexes automatically.
 
 Create missing indexes:
 

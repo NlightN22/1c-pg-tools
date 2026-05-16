@@ -8,14 +8,6 @@ JOIN pg_namespace n ON n.oid = t.typnamespace
 WHERE t.typname IN ('mchar', 'mvarchar')
 ORDER BY n.nspname, t.typname;
 
--- Required operator class for the expression index.
-SELECT n.nspname AS schema_name, opc.opcname AS operator_class, am.amname AS access_method
-FROM pg_opclass opc
-JOIN pg_namespace n ON n.oid = opc.opcnamespace
-JOIN pg_am am ON am.oid = opc.opcmethod
-WHERE opc.opcname = 'mvarchar_icase_ops'
-ORDER BY n.nspname, opc.opcname;
-
 -- Invalid or not-ready 1C number expression indexes.
 SELECT
     current_database() AS database_name,

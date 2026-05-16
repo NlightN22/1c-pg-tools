@@ -29,7 +29,7 @@ from onec_pg_tools.output import print_rows
 from onec_pg_tools.postgres import connect
 from onec_pg_tools.repository import database_exists, fetch_candidates
 from onec_pg_tools.repository import fetch_cluster_databases
-from onec_pg_tools.repository import fetch_invalid_index_by_name
+from onec_pg_tools.repository import fetch_index_by_name
 from onec_pg_tools.repository import fetch_invalid_indexes, fetch_prerequisites
 from onec_pg_tools.repository import fetch_report, is_primary
 
@@ -106,17 +106,20 @@ def process_dry_run_or_run(
         prerequisites = fetch_prerequisites(conn)
         for key, value in prerequisites.items():
             logger.info("database=%s prerequisite=%s value=%s", db_config.name, key, value)
-        if not prerequisites["has_mchar_mvarchar"] or not prerequisites["has_mvarchar_icase_ops"]:
-            logger.error("database=%s required_types_or_opclass_missing", db_config.name)
+        if not prerequisites["has_mchar_mvarchar"]:
+            logger.error("database=%s required_types_missing", db_config.name)
             return
 
         candidates = fetch_candidates(conn, db_config)
         logger.info("database=%s candidates=%d", db_config.name, len(candidates))
 
         for candidate in candidates:
+            index_name = make_index_name(candidate.table_name)
+            if not is_candidate_safe(conn, db_config, candidate, index_name, logger):
+                continue
+
             create_sql = build_create_index_sql(candidate)
             create_sql_text = create_sql.as_string(conn)
-            index_name = make_index_name(candidate.table_name)
             print(f"-- database: {db_config.name}")
             print(f"-- table_size: {candidate.table_size_pretty}")
             print(create_sql_text + ";")
@@ -128,8 +131,6 @@ def process_dry_run_or_run(
                 candidate.table_size_pretty,
                 create_sql_text,
             )
-            if not is_candidate_safe(conn, db_config, candidate, index_name, logger):
-                continue
             if mode == "dry-run":
                 continue
             create_index(conn, db_config, candidate, index_name, create_sql, logger)
@@ -145,13 +146,17 @@ def is_candidate_safe(conn, db_config, candidate, index_name, logger) -> bool:
         )
         return False
 
-    invalid_index = fetch_invalid_index_by_name(conn, index_name)
-    if invalid_index:
+    existing_index = fetch_index_by_name(conn, index_name)
+    if existing_index:
         logger.error(
-            "database=%s table=%s skipped_invalid_index_exists index=%s",
+            "database=%s table=%s skipped_index_name_exists index=%s "
+            "indisvalid=%s indisready=%s definition=%s",
             db_config.name,
             candidate.table_name,
             index_name,
+            existing_index["indisvalid"],
+            existing_index["indisready"],
+            existing_index["index_definition"],
         )
         return False
     return True

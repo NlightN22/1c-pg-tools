@@ -74,26 +74,12 @@ def fetch_prerequisites(conn) -> dict[str, Any]:
         type_count = int(cur.fetchone()["type_count"])
 
         cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_opclass opc
-                JOIN pg_am am ON am.oid = opc.opcmethod
-                WHERE opc.opcname = 'mvarchar_icase_ops'
-                  AND am.amname = 'btree'
-            ) AS exists
-            """
-        )
-        has_opclass = bool(cur.fetchone()["exists"])
-
-        cur.execute(
             "SELECT has_schema_privilege(current_user, 'public', 'CREATE') AS can_create"
         )
         can_create_public = bool(cur.fetchone()["can_create"])
 
     return {
         "has_mchar_mvarchar": type_count == 2,
-        "has_mvarchar_icase_ops": has_opclass,
         "can_create_public": can_create_public,
     }
 
@@ -144,7 +130,6 @@ def fetch_candidates(conn, db_config: DatabaseConfig) -> list[CandidateTable]:
                     AND i.indexprs IS NOT NULL
                     AND pg_get_expr(i.indexprs, i.indrelid) ILIKE '%%mvarchar%%'
                     AND pg_get_expr(i.indexprs, i.indrelid) ILIKE '%%_number%%'
-                    AND pg_get_indexdef(i.indexrelid) ILIKE '%%mvarchar_icase_ops%%'
               )
             ORDER BY pg_total_relation_size(c.oid) DESC, c.relname
             """,
@@ -171,7 +156,7 @@ def fetch_candidates(conn, db_config: DatabaseConfig) -> list[CandidateTable]:
     ]
 
 
-def fetch_invalid_index_by_name(conn, index_name: str) -> dict[str, Any] | None:
+def fetch_index_by_name(conn, index_name: str) -> dict[str, Any] | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
@@ -185,7 +170,6 @@ def fetch_invalid_index_by_name(conn, index_name: str) -> dict[str, Any] | None:
             JOIN pg_namespace ns ON ns.oid = idx.relnamespace
             WHERE ns.nspname = 'public'
               AND idx.relname = %s
-              AND (NOT i.indisvalid OR NOT i.indisready)
             """,
             (index_name,),
         )
