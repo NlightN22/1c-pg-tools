@@ -16,5 +16,6 @@ JOIN pg_class tbl ON tbl.oid = i.indrelid
 JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
 LEFT JOIN pg_stat_user_indexes s ON s.indexrelid = idx.oid
 WHERE ns.nspname = 'public'
-  AND idx.relname LIKE 'idx\_%\_number\_as\_mvarchar%' ESCAPE '\'
+  AND left(idx.relname, length('idx_')) = 'idx_'
+  AND right(idx.relname, length('_number_as_mvarchar')) = '_number_as_mvarchar'
 ORDER BY tbl.relname, idx.relname;

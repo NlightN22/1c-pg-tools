@@ -112,12 +112,17 @@ def fetch_candidates(conn, db_config: DatabaseConfig) -> list[CandidateTable]:
               AND t.typname IN ('mchar', 'mvarchar')
               AND pg_total_relation_size(c.oid) >= %s
               AND (
-                  lower(c.relname) LIKE '\_document%%' ESCAPE '\'
-                  OR (%s AND lower(c.relname) LIKE '\_task%%' ESCAPE '\')
-                  OR (%s AND lower(c.relname) LIKE '\_documentjournal%%' ESCAPE '\')
+                  left(lower(c.relname), length('_document')) = '_document'
+                  OR (%s AND left(lower(c.relname), length('_task')) = '_task')
+                  OR (
+                      %s
+                      AND left(lower(c.relname), length('_documentjournal'))
+                          = '_documentjournal'
+                  )
               )
               AND NOT (
-                  lower(c.relname) LIKE '\_documentjournal%%' ESCAPE '\'
+                  left(lower(c.relname), length('_documentjournal'))
+                      = '_documentjournal'
                   AND NOT %s
               )
               AND NOT EXISTS (
@@ -197,7 +202,9 @@ def fetch_report(conn) -> list[dict[str, Any]]:
             JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
             LEFT JOIN pg_stat_user_indexes s ON s.indexrelid = idx.oid
             WHERE ns.nspname = 'public'
-              AND idx.relname LIKE 'idx\\_%%\\_number\\_as\\_mvarchar%%' ESCAPE '\\'
+              AND left(idx.relname, length('idx_')) = 'idx_'
+              AND right(idx.relname, length('_number_as_mvarchar'))
+                  = '_number_as_mvarchar'
             ORDER BY tbl.relname, idx.relname
             """
         )
@@ -222,7 +229,9 @@ def fetch_invalid_indexes(conn) -> list[dict[str, Any]]:
             JOIN pg_class tbl ON tbl.oid = i.indrelid
             JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
             WHERE ns.nspname = 'public'
-              AND idx.relname LIKE 'idx\\_%%\\_number\\_as\\_mvarchar%%' ESCAPE '\\'
+              AND left(idx.relname, length('idx_')) = 'idx_'
+              AND right(idx.relname, length('_number_as_mvarchar'))
+                  = '_number_as_mvarchar'
               AND (NOT i.indisvalid OR NOT i.indisready)
             ORDER BY tbl.relname, idx.relname
             """

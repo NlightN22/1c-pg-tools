@@ -23,6 +23,7 @@ JOIN pg_class idx ON idx.oid = i.indexrelid
 JOIN pg_class tbl ON tbl.oid = i.indrelid
 JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
 WHERE ns.nspname = 'public'
-  AND idx.relname LIKE 'idx\_%\_number\_as\_mvarchar%' ESCAPE '\'
+  AND left(idx.relname, length('idx_')) = 'idx_'
+  AND right(idx.relname, length('_number_as_mvarchar')) = '_number_as_mvarchar'
   AND (NOT i.indisvalid OR NOT i.indisready)
 ORDER BY tbl.relname, idx.relname;
