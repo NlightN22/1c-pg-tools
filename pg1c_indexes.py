@@ -21,7 +21,7 @@ except ImportError as exc:  # pragma: no cover - handled at runtime for admins.
     )
     raise SystemExit(2) from exc
 
-from onec_pg_tools.config import DatabaseConfig, PostgresConfig, configure_pgpass
+from onec_pg_tools.config import DatabaseConfig, PostgresConfig
 from onec_pg_tools.config import load_config
 from onec_pg_tools.index_sql import build_analyze_sql, build_create_index_sql
 from onec_pg_tools.index_sql import make_index_name
@@ -236,7 +236,6 @@ def main() -> int:
     args = parse_args()
     config_path = Path(args.config).resolve()
     logger = setup_logging(args.mode, Path(args.log_dir))
-    configure_pgpass(SCRIPT_DIR)
 
     logger.info("started config=%s", config_path)
     postgres, databases = load_config(config_path)

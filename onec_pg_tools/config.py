@@ -1,8 +1,7 @@
-"""Configuration loading and libpq password setup."""
+"""Configuration loading."""
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,9 +69,3 @@ def load_config(path: Path) -> tuple[PostgresConfig, list[DatabaseConfig]]:
         )
 
     return postgres, databases
-
-
-def configure_pgpass(script_dir: Path) -> None:
-    local_pgpass = script_dir / ".pgpass"
-    if "PGPASSFILE" not in os.environ and local_pgpass.exists():
-        os.environ["PGPASSFILE"] = str(local_pgpass)

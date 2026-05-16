@@ -118,12 +118,19 @@ Do not store the PostgreSQL password in `config.yaml`.
 Preferred setup:
 
 ```bash
-cp /opt/1c-pg-tools/.pgpass.example /opt/1c-pg-tools/.pgpass
-chmod 600 /opt/1c-pg-tools/.pgpass
+cp /opt/1c-pg-tools/.pgpass.example ~/.pgpass
+chmod 600 ~/.pgpass
 ```
 
-The script automatically uses `/opt/1c-pg-tools/.pgpass` as `PGPASSFILE` when
-that file exists and `PGPASSFILE` is not already set.
+When the tool is run as `root`, the default libpq password file is:
+
+```text
+/root/.pgpass
+```
+
+The tool does not override `PGPASSFILE`. Password lookup follows standard libpq
+behavior, the same as `psql`: use `PGPASSFILE` when it is set, otherwise use
+the current user's `~/.pgpass`.
 
 Example `.pgpass` line:
 
@@ -131,8 +138,7 @@ Example `.pgpass` line:
 pg-write.example.internal:5432:*:postgres:strong_password_here
 ```
 
-Standard libpq alternatives also work, for example a home-directory `.pgpass`
-or `PGPASSWORD`, but `.pgpass` is preferred.
+`PGPASSWORD` also works, but a user-owned `.pgpass` file is preferred.
 
 ## Run Modes
 
