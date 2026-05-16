@@ -1,0 +1,2 @@
+# host:port:database:user:password
+pg-write.example.internal:5432:*:postgres:change_me

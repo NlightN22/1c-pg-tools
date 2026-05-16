@@ -1,0 +1,30 @@
+postgres:
+  host: pg-write.example.internal
+  port: 5432
+  user: postgres
+  connect_db: postgres
+
+defaults:
+  min_table_size_gb: 1
+  include_document_journals: false
+  include_tasks: true
+  analyze_after_create: true
+
+databases:
+  - name: infobase_prod
+    enabled: true
+    min_table_size_gb: 1
+    include_document_journals: false
+    include_tasks: true
+
+  - name: accounting_prod
+    enabled: true
+    min_table_size_gb: 1
+    include_document_journals: false
+    include_tasks: true
+
+  - name: warehouse_prod
+    enabled: true
+    min_table_size_gb: 1
+    include_document_journals: false
+    include_tasks: true
