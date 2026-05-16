@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 import time
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -96,7 +97,7 @@ def process_dry_run_or_run(
     db_config: DatabaseConfig,
     logger: logging.LoggerAdapter,
 ) -> None:
-    with connect(postgres, db_config.name) as conn:
+    with closing(connect(postgres, db_config.name)) as conn:
         primary = is_primary(conn)
         logger.info("database=%s primary=%s", db_config.name, primary)
         if mode == "run" and not primary:
@@ -190,7 +191,7 @@ def create_index(conn, db_config, candidate, index_name, create_sql, logger) -> 
 
 
 def process_report_mode(postgres: PostgresConfig, db_config: DatabaseConfig) -> None:
-    with connect(postgres, db_config.name) as conn:
+    with closing(connect(postgres, db_config.name)) as conn:
         rows = fetch_report(conn)
         print(f"\n# database: {db_config.name}")
         print_rows(rows)
@@ -199,7 +200,7 @@ def process_report_mode(postgres: PostgresConfig, db_config: DatabaseConfig) -> 
 def process_check_invalid_mode(
     postgres: PostgresConfig, db_config: DatabaseConfig
 ) -> None:
-    with connect(postgres, db_config.name) as conn:
+    with closing(connect(postgres, db_config.name)) as conn:
         rows = fetch_invalid_indexes(conn)
         print(f"\n# database: {db_config.name}")
         print_rows(rows)
@@ -252,7 +253,7 @@ def main() -> int:
         len(enabled_databases),
     )
 
-    with connect(postgres, postgres.connect_db) as admin_conn:
+    with closing(connect(postgres, postgres.connect_db)) as admin_conn:
         if args.mode == "list-databases":
             process_list_databases_mode(admin_conn, databases)
             logger.info("finished")
